@@ -1,0 +1,313 @@
+
+![Source: BGR](bfimage.jpg)
+
+
+---
+title: "Black Friday Project"
+author: "Dave Anderson"
+date: "December 6, 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE,message = FALSE)
+```
+##Abstract
+  This report outlines a study of black Friday sales data for a single company. The company itself is masked, as are many of the categories for variables. The general purpose of studying this data is to help maximize profits for the company. This is accomplished by first analyzing the demographics and general spending trends of the customers. Then I developed three different models in hopes of predicting how much various customers are expected to spend. Data limitations, including the masked categories and the mysterious purchase amounts, and large variations prevented the development of a trustworthy model. At the same time, I was able to use the models to draw important conclusions about the company's target demographic. 
+  
+##Introduction
+  I find quantifying human behavior to be both incredibly interesting and powerful. One of the best ways to understand our society is to examine consumer data. Like it or not, money is a critical aspect of our lives, and how we choose to spend it is an important decision. I am fascinated by the ability of companies to predict who their customers will be and what they will buy, and I would be honored to work in a position where I perform similar analysis to help a company succeed. 
+  To begin to understand this field, I chose to analyze a company's black Friday sales report. The data includes about 500,000 transactions. Variables include a customer code, age category, gender, occupation category, product category, and city information. Most of the data is masked as we do not know what the store is or what the categories represent. At first, the missing information deterred me from this dataset, but it will be interesting to guess the nature of the categories as I investigate the data. The overall goal of my analysis is to build a model that will help predict spending of customers in order to maximize profit and marketing resources for this company. I will begin by organizing and visualizing the data at a basic level.
+ 
+
+```{r}
+library(tidyverse)
+library(coefplot)
+library(kableExtra)
+library(reshape2)
+library(gridExtra)
+library(reshape)
+library(MASS)
+library(lme4)
+blackfriday <- read_csv("BlackFriday.csv")
+
+#Add column for number of purchases for each person
+purchase <- blackfriday %>% group_by(User_ID) %>% summarise(Purchases=n())
+blackfriday <- full_join(blackfriday,purchase,by = "User_ID")
+
+#Add Age Category
+blackfriday <- blackfriday %>% mutate(age_cat = ifelse(Age == '0-17',0,ifelse(Age == '18-25',1,ifelse(Age == '26-35',2,ifelse(Age == '36-45',3,ifelse(Age == '46-50',4,ifelse(Age == '51-55',4,ifelse(Age == '55+',5,NA)))))))) %>% mutate(gender_cat = ifelse(Gender == 'M',1,0))
+
+#Add Gender Binary
+blackfriday <- blackfriday %>% mutate(gender_cat = ifelse(Gender == "M",1,0))
+
+#Add City Category
+blackfriday <- blackfriday %>% mutate(city_cat = ifelse(City_Category == "A",1,ifelse(City_Category == "B",2,3)))
+
+#Change to dollars
+blackfriday$Purchase <- blackfriday$Purchase/100
+
+#Add Purchase Categories
+blackfriday <- blackfriday %>% mutate('Purchase Cat' = ifelse(Purchase < 50,0,ifelse(Purchase >= 50 & Purchase < 100,1,ifelse(Purchase >= 100 & Purchase < 150,2,3))))
+
+#Individuals as single observation
+unique <- blackfriday %>% group_by(User_ID) %>% summarise(Average = mean(Purchase),gender = min(gender_cat),age = min(age_cat),total = sum(Purchase),occupation = min(Occupation),n = n(),city = mean(city_cat))
+
+
+```
+##Method
+###EDA
+####Demographics
+  The original dataset was found on Kaggle and comes from a competition hosted by Analytics Vidhya. The original form will be useful in analyzing the consumer data by looking into what products certain people are buying. But first, I wanted to learn about who the customers are. I created a dataset with each individual as a row, including average purchase, total purchase amount, and number of purchases as variables. There are 5,891 customers with number of purchases ranging from 5 to 1,025. From the first plot, we can see that the target demographic of this store is 26-35 year old males. Males tend to buy more expensive products (95 to 88), more items (222 to 192), and there are many more male customers in general (4,225 to 1,666).
+```{r}
+#Counts and Purchases by age, gender
+ggplot(unique,aes(age,total/1000))+
+  geom_col(aes(fill = factor(gender)))+
+  labs(title = "Total Spent by Age and Gender",y = "Total Spent (in  Thousands",x = "Age")+
+  scale_fill_discrete(name="Gender",breaks=c("0", "1"),
+                         labels=c("Female", "Male"))+
+  scale_x_continuous(breaks=c(0,1,2,3,4,5),labels = c("0-17","18-25","26-35","36-45","46-55","55+"))
+
+```
+
+
+####Occupations
+
+  Occupation is most likely another key factor. From the two plots, we can see that occupations 0, 4 and 7 have the most customers and contribute the most total revenue. Occupations 12, 15, and 17 buy the most expensive products, on average, but that metric does not vary much (87-99). Occupation 9 is the only one with a female majority. Occupation 10 is where most of the customers under the age of 18 are, which makes me believe this is unemployed or student. Occupation 4 could potentially be college students, with most of the 18-25 year-olds in this category. The company's target age, 26-35, is present across multiple occupations. 
+
+```{r,fig.width=10,fig.show='hold',fig.align='center'}
+
+
+#Occupation Numbers
+p1 <- ggplot(unique,aes(occupation))+
+  geom_bar(aes(fill = factor(age)))+
+  scale_x_continuous(breaks = 0:20)+
+  labs(title = "Number of Individuals by Occupation", x = "Occupation", y = "Customers")+
+   scale_fill_discrete(name="Age",breaks=c(0:5),
+                         labels=c("0-17", "18-25","26-35","36-45","46-55","55+"))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+
+#Occupation Spending
+p2 <- ggplot(unique,aes(occupation,total/1000))+
+  geom_col(aes(fill = factor(gender)))+
+  scale_x_continuous(breaks = 0:20)+
+  labs(title = "Total Spent for Each Occupation", y = "Total Spent (In Thousands)", x = "Occupation")+
+   scale_fill_discrete(name="Gender",breaks=c("0", "1"),
+                         labels=c("Female", "Male"))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+grid.arrange(p1,p2,ncol = 2)
+
+occupations <- blackfriday %>% group_by(Occupation) %>% summarise(Purchases = n(), 'Average Product Cost'=mean(Purchase))
+```
+
+####Cities
+  The city category may be difficult to draw conclusions from as there are only three categories, and we don't know what they represent. The two bar plots below show that the largest portion of customers come from city category 3, but total purchases are highest in category 2. We could guess that city category 3 is a low-income area. Age and gender are evenly spread across each city category and length of stay in the current city.   
+
+```{r,fig.width=10,fig.show='hold',fig.align='center'}
+p7 <- ggplot(unique,aes(city))+geom_bar(fill = 'darkgoldenrod')+
+  labs(title = "Number of Customers by City Category",x = "City Category",y = "Number of Customers")
+
+
+p8<- ggplot(blackfriday,aes(city_cat,Purchase/1000))+geom_col(fill = 'darkgoldenrod')+
+  labs(title = "Total Purchase Amount by City Category", x = "City Category",y = "Total Spent (Thousands)")
+
+grid.arrange(p7,p8,ncol = 2)
+ggplot(blackfriday,aes(Stay_In_Current_City_Years, Purchase))+geom_col(aes(fill = factor(age_cat)))
+```
+
+
+####Purchases at Customer Level
+
+  As previously stated, the goal of studying this data are to help maximize profits for the company. Therefore, the key outcome variables for our models will be purchase amounts for the individual, number of purchases for each individual, and product purchases. To investigate these variables, I began with a histogram of total amount spent by each individual. For visual purposes, I excluded 13 individuals over 60,000, with the largest value being about 100,000. Plotting the distribution of the number of purchases for each customer shows a similar pattern. 
+  
+```{r, fig.align='center',fig.width=10,fig.show='hold'}
+totals_hist <- unique %>% filter(total < 60000)
+p3 <- ggplot(totals_hist,aes(total))+geom_histogram(color = "white",fill = "navy")+
+  labs(title = "Histogram of Individual Total Spending", x = "Total Spent", y = "Number of People")
+
+number_hist <- unique %>% filter(n < 700)
+p4 <- ggplot(number_hist,aes(n))+geom_histogram(color = "white", fill = "navy")+
+  labs(title = "Histogram of Individual Number of Purchases", x = "Number of Purchases", y = "Number of People")
+
+grid.arrange(p3,p4,ncol = 2)
+
+
+```
+
+####Product Purchases
+Continuing to examine our potential response variables, I chose to look at the average purchase amounts for each individual. As expected, the distribution of these averages looks approximately normal. The plot on the right shows the distribution of all 537577 purchase amounts from the original dataset. I assume the peaks in the histogram are from certain products that are especially popular.  
+
+```{r,fig.width=10,fig.show='hold',fig.align='center'}
+p5<- ggplot(unique,aes(Average))+geom_histogram(color = "white", fill = "orchid 3")+
+  labs(title = "Histogram of Average Purchase Amount", x = "Average Product Cost per Person", y = "Number of People")
+
+p6 <- ggplot(blackfriday,aes(Purchase))+geom_histogram(color = "white", fill = "orchid 3")
+
+grid.arrange(p5,p6,ncol = 2)
+
+```
+
+####Products
+  Product categories range from 1 to 18. Some observations have one category listed, while others have two or three. With so many categories of products, I am tempted to think this store is a large department store. On the other hand, we can see from the bar plot that most of the sales fall into a few categories. Grouping by product ID, we can see that there are many popular items. As we would expect, the average age and gender of these top-selling products is in line with our target demographic. 
+```{r}
+ggplot(blackfriday,aes(Product_Category_1,Purchase/1000))+
+  geom_col(fill = 'seagreen4')+
+  scale_x_continuous(breaks = 1:18)+
+  labs(x = "Product Category",y = "Total Revenue", title = "Amount Sold by Product Category")
+
+
+top_products <- blackfriday %>% group_by(Product_ID) %>% summarise(Number=n(),'Male Ratio' = round(sum(gender_cat)/n(),2),'Average Age Category' = round(mean(age_cat),2),Cost = mean(Purchase),Category = mean(Product_Category_1)) %>% arrange(desc(Number))
+
+top_products[1:5,c(1:4,6)] %>% kable(caption = "Top Products") %>% kable_styling(bootstrap_options = c("striped", "hover","condensed"))
+
+```
+
+###EDA Conclusions  
+  I had hoped to have gained some insight into the categories and the store itself by this point. The target demographic of this store is clearly 25-36 year old males. A few occupations contribute more total revenue, but individual spending habits do not differ among occupations. It is difficult to draw any more conclusions as to what the occupation categories may represent. The large number of product categories being sold makes me think this is a large department store. When thinking of stores that would target young males, electronics and athletics come to mind, but I would expect to see more female customers at a large chain such as BestBuy or Dicks Sporting Goods. The biggest issue I am seeing with the dataset is the purchase amounts. The original source claims these are in dollars, but I had a hard time believing the store was selling $20,000 items. Therefore I divided the amounts by 100, but it still didn't seem right. The purchase amounts actually vary among individual products. With the purchase amounts being the focus of my models and conclusions, these are troubling assumptions to keep in mind.  
+  The large number of observations combined with mainly categorical variables makes plotting scatterplots difficult. Based on EDA and the following correlation plot, it seems as though we will need to utilize almost all variables to create a predictive model. I will not include marital status, as this seems to be closely related with age. 
+
+
+
+```{r}
+
+cor_map <- blackfriday
+cor_map <- cor_map[,c(5,8,9,12,13,14,15,16)]
+cor_map[is.na(cor_map)] <- " "
+cor_map <- data.frame(lapply(cor_map, function(x) as.numeric(as.character(x))))
+map <- cor(cor_map)
+melted_cormap <- melt(map)
+ggplot(data = melted_cormap, aes(x=X1, y=X2, fill=value)) + geom_tile()+ theme(axis.text.x=element_text(angle=45, hjust=1))
+
+
+
+```
+
+###Models Chosen
+  The company would most likely want to predict how much an individual of a certain discription will spend in their store. I will attempt to create a simple linear model with a log transformation on the individual total purchase amounts as the outcome variable. This model will probably not be the best fit model, but it will allow for easily interperatable effects of each category. 
+    Because I do not completely trust the purchase amounts, I will also run a ordinal multinomial regression. I have created categories for each purchase. Categories are set from 0-3, every $50 is a new category. 
+    
+    
+
+
+
+
+
+
+##Results
+###Model Outputs
+####Linear
+```{r}
+#Linear
+lm <- unique %>% filter(total<60000)
+lm1 <- lm(log(total) ~ factor(gender) + factor(age)+ factor(city) + factor(occupation),lm)
+
+
+summary(lm1)
+
+
+```
+####Categorical
+```{r}
+#Categorical
+blackfriday$`Purchase Cat` <- as.factor(blackfriday$`Purchase Cat`)
+
+bf_polr<- polr(blackfriday$`Purchase Cat` ~ factor(Age)+factor(Occupation)+factor(City_Category)+factor(Stay_In_Current_City_Years)+factor(Product_Category_1)+factor(Gender), data = blackfriday)
+summary(bf_polr)
+
+```
+####Multilevel
+Results hidden for faster knitting
+```{r}
+#Took a while to end for knitting
+#blackfriday$User_ID <- as.numeric(blackfriday$User_ID)
+
+#bf_lmer<- lmer(Purchase ~ factor(Age)+factor(Occupation)+factor(City_Category)+factor(Stay_In_Current_City_Years)+factor(Product_Category_1)+(1|User_ID), data = blackfriday)
+#summary(bf_lmer)
+
+
+```
+
+
+
+###Interpretation
+####Linear
+Many of our coefficients are not statistically significant, and the R squared value is a very low 0.194. The model does confirm previous observations. According to this model, individuals in the 25-36 age range have a 30% increase in total spending. Customers living in city category 2 are expected to spend 15% more, holding other variables constant. Occupation 19 actually shows the greatest increase in overall spending, although this coefficient is not statistically significant. 
+
+####Categorical/Multilevel
+Although the majority of the revenue for this company comes from younger populations, these two models both show that the older customers are the ones more likely to purchase more expensive products. Occupation 15 also tends to buy more expensive products, which fits our previous assumptions. 
+
+
+###Model Checking
+####Linear
+We can see from the residuals and normal qq plots that this model does not fit very well. I decided to split the data into a train and test set for the model. 70% of the data was used to generate a new model using the same variables. The model was then used to predict the total purchase amounts for the rest of the dataset. On average, the model predictions were about 40% higher than the actual amounts spent. 
+```{r}
+plot(lm1,which = 1:2)
+sample <- sample(1:nrow(unique),size = floor(nrow(unique)*0.7))
+train <- unique[sample,]
+test <- unique[-sample,]
+
+lm1_train <- lm(total ~ factor(gender) + factor(age)+ factor(city) + factor(occupation),train)
+
+train_prob_total<-  predict(lm1_train,newdata = train)
+train <-  cbind(train,train_prob_total)
+
+test_prob_total<-  predict(lm1_train,newdata = test)
+test <-  cbind(test,test_prob_total)
+
+mean(abs((test$total-test$test_prob_total)/test$total))
+```
+####Categorical
+  Using a similar strategy as the linear model, I split the original dataset into a train and test set to test the accuracy of the model choice. The model accuately predicted the purchase amount category for 70% of the purchases. This seems like a pretty good amount, but we have to remember that these categories span a $50 range. Determining who will buy more expensive products is important, but I think the company would want a more precise model than this. 
+```{r}
+sample <- sample(1:nrow(blackfriday),size = floor(nrow(blackfriday)*0.7))
+train <- blackfriday[sample,]
+test <- blackfriday[-sample,]
+bf_polr<- polr(train$`Purchase Cat` ~ factor(Age)+factor(Occupation)+factor(City_Category)+factor(Stay_In_Current_City_Years)+factor(Product_Category_1), data = train)
+
+
+test_prob_purchase2 <-  predict(bf_polr,newdata = test)
+test2 <-  cbind(test,test_prob_purchase2)
+test2$`Purchase Cat` <- as.numeric(test2$`Purchase Cat`)
+test2$test_prob_purchase2 <- as.numeric(test2$test_prob_purchase2)
+test2 <- test2 %>% mutate(accuracy = (test2$test_prob_purchase2 - test2$`Purchase Cat`))
+
+
+```
+
+
+
+
+##Discussion
+  I think it is easy to draw conclusions on the customer base of this company. The majority of their customers and revenue comes from a younger, male population. Our models predicting individual item costs show that the older populations will buy more expensive products. We can see this in other variables as well as a certain few occupations drive the majority of business, but a few are more likely to buy more expensive products. The number of products that people purchase can vary drastically. I am going to assume the customer who purchased over a thousand items was either buying something in bulk for an organization, or the entry was a typo. The data poses many of these questions, especially with the actual purchase prices. They follow a strange pattern and the range does not seem realistic with a store of this magnitude. We are also limited in our conclusions with masked variable categories. 
+  As far as the model goes, I was not able to create a model that fit well enough to make confident predictions moving forward. That said, I was able to draw conclusions about our population from the models. If I were to move forward, I would like to have information on the product categories and potentially build models to predict what types of products individuals would buy. I would also advice this company to advertise more outside of their target demographic. Although most of their profits come from young males, older customers and females are also willing to spend similar amounts of money when they do shop at this store. There seems to be room to grow in this market. My final guess of what this store is? No idea...but I will guess some type of electronics store. 
+
+
+
+
+
+##Acknowledgement
+  I can't thank my professors enough for a great first semester. I have been a little slow to pick up on skills and concepts, and I appreciate their support and patience through the learning process. Thank you to my family, friends, and former collegues who are supporting my passion and career change. Thank you to Americans for spending crazy amounts of money on black friday, allowing me to showcase my skills as a data scientist. 
+
+##Reference
+Data Source: 
+https://www.kaggle.com/mehdidag/black-friday
+
+
+
+
+
+```{r}
+##Appendix
+
+#Other possible models
+#Poisson on purchases counts
+#glm1 <- glm(n ~ factor(age) + factor(gender)+ factor(occupation), data = unique, family = poisson)
+
+#summary(glm1)
+#plot(fitted(glm1),rstandard(glm1));abline(h=0)
+```
+
+

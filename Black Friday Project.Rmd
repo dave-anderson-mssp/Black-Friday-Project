@@ -29,6 +29,7 @@ library(gridExtra)
 library(reshape)
 library(MASS)
 library(lme4)
+library(coefplot)
 blackfriday <- read_csv("BlackFriday.csv")
 
 #Add column for number of purchases for each person
@@ -206,8 +207,8 @@ lm1 <- lm(log(total) ~ factor(gender) + factor(age)+ factor(city) + factor(occup
 
 
 summary(lm1)
-
-
+coefplot(lm1, predictors = "factor(age)")
+coefplot(lm1, predictors = "factor(occupation)")
 ```
 ####Categorical
 ```{r}

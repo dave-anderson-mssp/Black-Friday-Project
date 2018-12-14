@@ -26,7 +26,6 @@ library(gridExtra)
 library(reshape)
 library(MASS)
 library(lme4)
-library(coefplot)
 blackfriday <- read_csv("BlackFriday.csv")
 
 #Add column for number of purchases for each person
@@ -195,6 +194,7 @@ ggplot(data = melted_cormap, aes(x=X1, y=X2, fill=value)) + geom_tile()+ theme(a
 ##Results
 ###Model Outputs
 ####Linear
+A ran a simple linear regression on log transformation of total purchased for each individual with gender, age, city category and occupation as predictors. 
 ```{r}
 #Linear
 lm <- unique %>% filter(total<60000)
@@ -218,14 +218,17 @@ readRDS(file = "bf_polr.rds")
 
 ```
 ####Multilevel
-Results hidden for faster knitting
+I ran a partial pooling model on log of individual purchase amounts, grouping by user ID, with Age, Occupation, City Category, Stay in Current City, and Product Category as predictors. 
 ```{r}
 #Took a while to end for knitting
 blackfriday$User_ID <- as.numeric(blackfriday$User_ID)
 
-#bf_lmer<- lmer(Purchase ~ factor(Age)+factor(Occupation)+factor(City_Category)+factor(Stay_In_Current_City_Years)+factor(Product_Category_1)+(1|User_ID), data = blackfriday)
-#summary(bf_lmer)
+#bf_lmer<- lmer(log(Purchase) ~ factor(Age)+factor(Occupation)+factor(City_Category)+factor(Stay_In_Current_City_Years)+factor(Product_Category_1)+(1|User_ID), data = blackfriday)
 
+#saveRDS(bf_lmer, file = "bf_lmer.rds")
+bf_lmer <- readRDS(file = "bf_lmer.rds")
+
+arm::display(bf_lmer)
 
 ```
 
@@ -237,6 +240,8 @@ blackfriday$User_ID <- as.numeric(blackfriday$User_ID)
 
 ####Categorical/Multilevel
   Although the majority of the revenue for this company comes from younger populations, these two models both show that the older customers are the ones more likely to purchase more expensive products. Occupation 15 also tends to buy more expensive products, which fits our previous assumptions. In general, coefficients from these models show similar patterns to the linear model.
+  
+  The multilevel model actually has a better AIC than the categorical. This model reflects customers' individual purchase amounts, so it isn't suprising that older age groups have positive coefficients. We saw that even though the younger groups dive the total business, older age groups tend to spend slightlighty more on average. This is a very small increase (3%) and it is not statistically significant. There are, in fact, no real significant results from this model, other than the product categories as indicators of higher purchase amounts. When we exclude the product categories from the model, the AIC is off the charts, and our demographic coefficients are only increased slightly. I chose not to focus on this model moving forward because of the lack of interesting results it provides. I also think it is more valuable to focus on customers' total purchases, rather than individual ones. 
 
 
 ###Model Checking
